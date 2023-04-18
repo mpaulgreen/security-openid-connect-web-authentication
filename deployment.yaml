@@ -1,0 +1,84 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: quarkus-app
+  namespace: keycloak
+  labels:
+    app: quarkus-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quarkus-app
+  template:
+    metadata:
+      namespace: keycloak
+      labels:
+        app: quarkus-app
+    spec:
+      volumes:
+        - name: client-cert
+          secret:
+            secretName: client-cert
+            defaultMode: 420
+            optional: false
+      containers:
+        - resources: {}
+          name: quarkus-app
+          env:
+            - name: QUARKUS_OIDC_AUTH_SERVER_URL
+              value: https://fipskeycloak.apps.asaro.az-env1.appeng.rhecoeng.com/realms/quarkus
+            - name: QUARKUS_HTTP_SSL_CERTIFICATE_FILES
+              value: /mnt/certificates/cert.pem
+            - name: QUARKUS_HTTP_SSL_CERTIFICATE_KEY_FILES
+              value: /mnt/certificates/key.pem
+            - name: QUARKUS_OIDC_TLS_VERIFICATION # The rouge one
+              value: none
+          ports:
+            - containerPort: 8443
+              protocol: TCP
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: client-cert
+              mountPath: /mnt/certificates
+          terminationMessagePolicy: File
+          image: 'quay.io/mpaulgreen/security-openid-connect-web-authentication-quickstart-jvm:0.1.1'
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: quarkus-app-service
+  namespace: keycloak
+  labels:
+    app: quarkus-app
+spec:
+  ports:
+    - protocol: TCP
+      port: 8443
+      targetPort: 8443
+  type: ClusterIP
+  selector:
+    app: quarkus-app
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    route.openshift.io/termination: passthrough
+  name: quarkus-app-ingress
+  namespace: keycloak
+  labels:
+    app: quarkus-app
+spec:
+  host: quarkus-app.apps.asaro.az-env1.appeng.rhecoeng.com
+  to:
+    kind: Service
+    name: quarkus-app-service
+    weight: 100
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
